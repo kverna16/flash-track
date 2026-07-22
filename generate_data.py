@@ -13,13 +13,14 @@ Noise model (documented so you can explain it in an interview):
   variance between what was projected and what actually happened.
 """
 
+import os
 import random
 from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
 from faker import Faker
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 # ---------------------------------------------------------------------------
 # Config
@@ -29,7 +30,12 @@ DAYS_OF_HISTORY = 90  # 3 months
 MEMBERS_PER_LOCATION = (150, 400)  # random range per location
 NOISE_STD_DEV = 0.08  # 8% typical variance between flash and actual
 
-DB_CONN_STRING = "postgresql+psycopg2://flashtrack:flashtrack_dev_pw@localhost:5432/flashtrack"
+# Defaults to local Docker Postgres; override by setting the
+# FLASHTRACK_DB_URL environment variable (e.g. to point at Neon).
+DB_CONN_STRING = os.environ.get(
+    "FLASHTRACK_DB_URL",
+    "postgresql+psycopg2://flashtrack:flashtrack_dev_pw@localhost:5432/flashtrack",
+)
 
 fake = Faker()
 random.seed(42)
@@ -72,18 +78,13 @@ def generate_daily_flash_and_actuals(location_ids):
     start_date = date.today() - timedelta(days=DAYS_OF_HISTORY)
 
     for loc_id in location_ids:
-        # Each location gets its own baseline so locations aren't identical
         base_revenue = random.uniform(1800, 4500)
         base_attendance = random.uniform(80, 220)
 
         for day_offset in range(DAYS_OF_HISTORY):
             current_date = start_date + timedelta(days=day_offset)
-
-            # Slight upward/downward trend drift over the period
             trend_factor = 1 + (day_offset / DAYS_OF_HISTORY) * random.uniform(-0.05, 0.15)
 
-            # Weekday dip is NOT modeled here since we chose simple noise —
-            # every day uses the same baseline plus random noise only.
             projected_revenue = round(base_revenue * trend_factor, 2)
             projected_attendance = int(base_attendance * trend_factor)
 
@@ -94,7 +95,6 @@ def generate_daily_flash_and_actuals(location_ids):
                 "projected_attendance": projected_attendance,
             })
 
-            # Actuals = flash + random noise
             revenue_noise = np.random.normal(loc=0, scale=NOISE_STD_DEV)
             attendance_noise = np.random.normal(loc=0, scale=NOISE_STD_DEV)
 
@@ -114,11 +114,19 @@ def generate_daily_flash_and_actuals(location_ids):
 def main():
     engine = create_engine(DB_CONN_STRING)
 
+    masked = DB_CONN_STRING.split("@")[-1] if "@" in DB_CONN_STRING else DB_CONN_STRING
+    print(f"Connecting to host: {masked}")
+
+    print("Clearing existing data...")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "TRUNCATE TABLE daily_actuals, daily_flash, members, locations RESTART IDENTITY CASCADE;"
+        ))
+
     print("Generating locations...")
     locations_df = generate_locations(NUM_LOCATIONS)
     locations_df.to_sql("locations", engine, if_exists="append", index=False)
 
-    # Pull back the auto-generated IDs so members/flash/actuals can reference them
     location_ids = pd.read_sql("SELECT id FROM locations", engine)["id"].tolist()
 
     print("Generating members...")
