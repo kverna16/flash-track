@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: flashtrack_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: flashtrack
+      POSTGRES_PASSWORD: flashtrack_dev_pw
+      POSTGRES_DB: flashtrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - flashtrack_pgdata:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
+
+volumes:
+  flashtrack_pgdata:
