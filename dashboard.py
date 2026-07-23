@@ -7,12 +7,19 @@ from the daily_variance and flagged_anomalies views in Postgres.
 Run with: streamlit run dashboard.py
 """
 
+import os
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from sqlalchemy import create_engine
 
-DB_CONN_STRING = "postgresql+psycopg2://flashtrack:flashtrack_dev_pw@localhost:5432/flashtrack"
+# Defaults to local Docker Postgres; on Streamlit Community Cloud this is
+# set via Secrets to point at the Neon (cloud) database instead.
+DB_CONN_STRING = os.environ.get(
+    "FLASHTRACK_DB_URL",
+    "postgresql+psycopg2://flashtrack:flashtrack_dev_pw@localhost:5432/flashtrack",
+)
 
 st.set_page_config(page_title="FlashTrack", layout="wide")
 
@@ -68,7 +75,7 @@ fig_trend = px.line(
     trend_df, x="date", y="revenue", color="metric",
     labels={"revenue": "Revenue ($)", "date": "Date", "metric": "Metric"},
 )
-st.plotly_chart(fig_trend, use_container_width=True)
+st.plotly_chart(fig_trend, width="stretch")
 
 # --- Variance by location ---
 st.subheader("Average Revenue Variance by Location")
@@ -78,7 +85,7 @@ fig_bar = px.bar(
     labels={"revenue_variance_pct": "Avg. Variance (%)", "location_name": "Location"},
     color="revenue_variance_pct", color_continuous_scale="RdYlGn_r",
 )
-st.plotly_chart(fig_bar, use_container_width=True)
+st.plotly_chart(fig_bar, width="stretch")
 
 # --- Flagged anomalies table ---
 st.subheader("Flagged Anomalies (>= 15% variance)")
@@ -89,4 +96,4 @@ else:
         "date", "location_name", "projected_revenue", "actual_revenue",
         "revenue_variance_pct", "anomaly_type",
     ]]
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df, width="stretch", hide_index=True)
